@@ -2,11 +2,12 @@
 
 # settings
 name="media"
+vault_dir="000"
 title="Media"
 
 # config defaults
-config_file="rclone.conf"
-remote_drive="GDrive:path/to/media/"
+config_file="config/rclone_vault.conf"
+remote_drive="gdrive:Vault/$vault_dir/"
 config_local_secret="$name-local-secret"
 config_remote_secret="$name-remote-secret"
 local_secret="secret/$name"
@@ -35,6 +36,18 @@ print_header() {
   echo "${reset}"
 }
 
+# print config
+print_config() {
+  echo "${green}Configuration${reset}"
+  echo "${yellow}Config file:${reset} $config_file"
+  echo "${yellow}Remote drive:${reset} $remote_drive"
+  echo "${yellow}Config local secret:${reset} $config_local_secret"
+  echo "${yellow}Config remote secret:${reset} $config_remote_secret"
+  echo "${yellow}Local secret:${reset} $local_secret"
+  echo "${yellow}Local decrypted:${reset} $local_decrypted"
+  echo
+}
+
 # print help info
 print_help() {
   print_header
@@ -44,19 +57,18 @@ print_help() {
   echo "   ${yellow}upload${reset} - ${cyan}Upload files in local secret folder to Google Drive $remote_drive folder.${reset}"
   echo "   ${yellow}encrypt_upload [file]${reset} - ${cyan}Encrypt while uploading file to Google Drive $remote_drive folder.${reset}"
   echo "   ${yellow}download [file]${reset} - ${cyan}Download and decrypt files from Google Drive $remote_drive folder to local decrypted/media folder.${reset}"
-  echo "   ${yellow}search_download [query]${reset} - ${cyan}Search ls/ls_$name.txt and prompt to download all results.${reset}"
   echo "   ${yellow}mount [drive letter]${reset} - ${cyan}Mount Google Drive $remote_drive folder to [drive letter]: drive.${reset}"
   echo
   echo "   ${yellow}ls${reset} - ${cyan}List files on Google Drive $remote_drive folder.${reset}"
   echo "   ${yellow}ls_file${reset} - ${cyan}List files on Google Drive $remote_drive folder to ls/ls_$name.txt.${reset}"
-  echo "   ${yellow}lsd${reset} - ${cyan}List files and their encrypted filenames on Google Drive $remote_drive folder.${reset}"
-  echo "   ${yellow}lsd_file${reset} - ${cyan}List files and their encrypted filenames on Google Drive $remote_drive folder to ls/lsd_$name.txt.${reset}"
+  echo "   ${yellow}lse${reset} - ${cyan}List files and their encrypted filenames on Google Drive $remote_drive folder.${reset}"
+  echo "   ${yellow}lse_file${reset} - ${cyan}List files and their encrypted filenames on Google Drive $remote_drive folder to ls/lse_$name.txt.${reset}"
   echo
   echo "   ${yellow}search_ls [query]${reset} - ${cyan}Search ls/ls_$name.txt.${reset}"
-  echo "   ${yellow}search_lsd [query]${reset} - ${cyan}Search ls/lsd_$name.txt.${reset}"
-  echo "   ${yellow}search_remote_ls [query]${reset} - ${cyan}Search Google Drive $remote_drive folder using ls.${reset}"
+  echo "   ${yellow}search_lse [query]${reset} - ${cyan}Search ls/lse_$name.txt.${reset}"
   echo
   echo "   ${yellow}size${reset} - ${cyan}Show size of Google Drive $remote_drive folder.${reset}"
+  echo "   ${yellow}config${reset} - ${cyan}Show config.${reset}"
   echo "   ${yellow}help${reset} - ${cyan}Help interface.${reset}"
 }
 
@@ -88,7 +100,7 @@ rg_parse() {
       for file in "$@"
       do
         echo "${yellow}Encrypting and uploading $file...${reset}"
-        rclone --config $config_file copy "$file" $config_remote_secret: -v
+        rclone --config $config_file copy --transfers 32 --checkers 16 "$file" $config_remote_secret: -v
       done
       echo "${yellow}Done!${reset}"
       ;;
@@ -98,35 +110,7 @@ rg_parse() {
       for file in "$@"
       do
         echo "${yellow}Downloading $file...${reset}"
-        rclone --config $config_file copy $config_remote_secret:"$file" $local_decrypted -v
-      done
-      echo "${yellow}Done!${reset}"
-      ;;
-    "search_download")
-      # search list
-      # remove leading spaces that are treated as multiple columns, name is second column, filter name
-      results=`sed 's/^ *//' "ls/ls_$name.txt" | cut -d " " -f2- | egrep -i "$2"`
-
-      # display results
-      printf "${yellow}Results:${reset}\n"
-      echo $results
-      printf "\n"
-
-      # prompt to download
-      # -s: do not echo input character. -n 1: read only 1 character (separated by space)
-      read -p "Press ENTER to download or any other key to exit." -s -n 1 key
-      if [[ $key != "" ]]; then
-        # did not press enter
-        printf "\n"
-        exit 1
-      fi
-      printf "\n"
-
-      # make newlines the only separator
-      IFS=$'\n'
-      for file in $results; do
-        printf "\n${yellow}Downloading $file...${reset}\n"
-        rclone --config $config_file copy $config_remote_secret:"$file" $local_decrypted -v
+        rclone --config $config_file copy --transfers 32 --checkers 16 $config_remote_secret:"$file" $local_decrypted -v
       done
       echo "${yellow}Done!${reset}"
       ;;
@@ -143,34 +127,36 @@ rg_parse() {
       mkdir -p ls
       rclone --config $config_file ls $config_remote_secret: >"ls/ls_$name.txt" 2>&1
       ;;
-    "lsd")
-      echo "${yellow}Listing directories...${reset}"
+    "lse")
+      echo "${yellow}Listing encrypted names...${reset}"
       rclone --config $config_file lsd --crypt-show-mapping $config_remote_secret:
       ;;
-    "lsd_file")
-      echo "${yellow}Listing directories to ls/lsd_$name.txt...${reset}"
+    "lse_file")
+      echo "${yellow}Listing encrypted names to ls/lse_$name.txt...${reset}"
       mkdir -p ls
-      rclone --config $config_file lsd --crypt-show-mapping $config_remote_secret: >"ls/lsd_$name.txt" 2>&1
+      rclone --config $config_file lsd --crypt-show-mapping $config_remote_secret: >"ls/lse_$name.txt" 2>&1
       ;;
     "search_ls")
       echo "${yellow}Searching files for $2...${reset}"
       cat "ls/ls_$name.txt" | egrep -i "$2" | sort -k 2
       ;;
-    "search_lsd")
-      echo "${yellow}Searching directories for $2...${reset}"
-      cat "ls/lsd_$name.txt" | egrep -i "$2" | sort -k 2
-      ;;
-    "search_remote_ls")
-      echo "${yellow}Searching remote files for $2...${reset}"
-      cat <(rclone --config $config_file ls $config_remote_secret:) | egrep -i "$2" | sort -k 2
+    "search_lse")
+      echo "${yellow}Searching encrypted names for $2...${reset}"
+      cat "ls/lse_$name.txt" | egrep -i "$2" | sort -k 2
       ;;
     "size")
       echo "${yellow}Computing size...${reset}"
       rclone --config $config_file size $config_remote_secret:
       ;;
+    "config")
+      print_config
+      ;;
     "help")
       print_help
       ;;
+    *)
+      echo "Error: invalid command"
+      exit 1
   esac
 }
 
